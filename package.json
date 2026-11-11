@@ -1,0 +1,80 @@
+{
+  "name": "qadrahr-ai",
+  "version": "0.1.0",
+  "description": "QadraHR AI service \u2014 LLM work, isolated from the API",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "nest build",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main",
+    "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/$1"
+    },
+    "testEnvironment": "node"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.12",
+    "@langchain/openai": "^1.5.8",
+    "@nestjs/common": "^10.4.22",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.22",
+    "@nestjs/platform-express": "^10.4.22",
+    "@nestjs/throttler": "^6.5.0",
+    "helmet": "^7.2.0",
+    "joi": "^17.13.8",
+    "mammoth": "^1.12.3",
+    "nestjs-pino": "^4.6.1",
+    "pdf-parse": "^2.4.5",
+    "pino-http": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@nestjs/schematics": "^10.2.3",
+    "@nestjs/testing": "^10.4.22",
+    "@types/express": "^4.17.25",
+    "@types/jest": "^29.5.14",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^20.19.43",
+    "@types/pdfkit": "^0.17.6",
+    "@types/supertest": "^6.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/parser": "^8.70.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-prettier": "^5.5.6",
+    "jest": "^29.7.0",
+    "jszip": "^3.10.2",
+    "pdfkit": "^0.20.2",
+    "pino-pretty": "^13.1.3",
+    "prettier": "^3.9.9",
+    "supertest": "^7.3.0",
+    "ts-jest": "^29.4.14",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "~5.6.2"
+  }
+}
