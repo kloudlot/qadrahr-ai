@@ -22,6 +22,17 @@ export const validationSchema = Joi.object({
   LLM_MAX_RETRIES: Joi.number().integer().min(0).max(5).default(2),
   AI_MAX_CONCURRENCY: Joi.number().integer().min(1).default(8),
 
+  // Off unless asked for: a deployment that only screens CVs needs no models.
+  FACE_PROVIDER: Joi.string().valid('onnx', 'fake', 'off').default('off'),
+  FACE_MODEL_DIR: Joi.string().allow(''),
+  FACE_THREADS: Joi.number().integer().min(1).default(2),
+  FACE_MAX_CONCURRENCY: Joi.number().integer().min(1).default(2),
+  FACE_MAX_FRAMES: Joi.number().integer().min(1).max(12).default(6),
+  FACE_MAX_FRAME_BYTES: Joi.number()
+    .integer()
+    .min(1024)
+    .default(3 * 1024 * 1024),
+
   MAX_CV_BYTES: Joi.number()
     .integer()
     .min(1024)

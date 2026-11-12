@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { fakeFrame } from '../src/face/fake.engine';
 import { docxWith, pdfWith, POSTING, SAMPLE_CV } from './fixtures';
 
 const TOKEN = 'test-service-token-that-is-long-enough-000';
@@ -19,6 +20,8 @@ describe('qadrahr-ai (e2e)', () => {
       NODE_ENV: 'test',
       AI_SERVICE_TOKEN: TOKEN,
       LLM_PROVIDER: 'fake',
+      FACE_PROVIDER: 'fake',
+      FACE_MAX_FRAME_BYTES: String(16 * 1024),
       MAX_CV_BYTES: String(64 * 1024),
     });
     const { AppModule } = await import('../src/app.module');
@@ -40,7 +43,12 @@ describe('qadrahr-ai (e2e)', () => {
   describe('auth', () => {
     it('lets health through without a token', async () => {
       const res = await request(app.getHttpServer()).get('/health').expect(200);
-      expect(res.body).toMatchObject({ status: 'ok', model: 'fake', inFlight: 0 });
+      expect(res.body).toMatchObject({
+        status: 'ok',
+        model: 'fake',
+        inFlight: 0,
+        face: { provider: 'fake', model: 'fake', inFlight: 0 },
+      });
     });
 
     it('refuses a missing or wrong token', async () => {
@@ -154,6 +162,75 @@ describe('qadrahr-ai (e2e)', () => {
       await authed(request(app.getHttpServer()).post('/v1/recruitment/match'))
         .send({ role: { title: '' }, candidate: {} })
         .expect(400);
+    });
+  });
+
+  describe('POST /v1/face/analyse', () => {
+    const analyse = () => authed(request(app.getHttpServer()).post('/v1/face/analyse'));
+    const dot = (a: number[], b: number[]) => a.reduce((sum, value, i) => sum + value * b[i], 0);
+
+    it('needs the service token', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/face/analyse')
+        .attach('frames', fakeFrame({ person: 'ada' }), 'a.jpg')
+        .expect(401);
+    });
+
+    it('measures each frame, in the order sent', async () => {
+      const res = await analyse()
+        .attach('frames', fakeFrame({ person: 'ada' }), 'align.jpg')
+        .attach('frames', fakeFrame({ person: 'ada', yaw: 0.45 }), 'turn.jpg')
+        .attach('frames', fakeFrame({ person: 'tunde' }), 'final.jpg')
+        .expect(200);
+
+      expect(res.body.model).toBe('fake');
+      expect(res.body.frames).toHaveLength(3);
+      const [align, turn, final] = res.body.frames;
+      expect(align).toMatchObject({
+        index: 0,
+        faceCount: 1,
+        face: {
+          box: expect.any(Object),
+          score: expect.any(Number),
+          yaw: 0,
+          eyeSpan: expect.any(Number),
+          sharpness: expect.any(Number),
+          brightness: expect.any(Number),
+        },
+      });
+      expect(align.face.landmarks).toHaveLength(5);
+      expect(align.face.embedding).toHaveLength(128);
+      expect(turn.face.yaw).toBe(0.45);
+
+      // The caller compares: same person across the first two, a stranger in the third.
+      expect(dot(align.face.embedding, turn.face.embedding)).toBeGreaterThan(0.99);
+      expect(Math.abs(dot(align.face.embedding, final.face.embedding))).toBeLessThan(0.3);
+    });
+
+    it('reports an empty frame and a crowded one without failing the request', async () => {
+      const res = await analyse()
+        .attach('frames', fakeFrame({ faces: 0 }), 'empty.jpg')
+        .attach('frames', fakeFrame({ person: 'ada', faces: 2 }), 'two.jpg')
+        .expect(200);
+      expect(res.body.frames[0]).toMatchObject({ faceCount: 0, face: null });
+      expect(res.body.frames[1].faceCount).toBe(2);
+    });
+
+    it('answers 400 with no frames, an unreadable frame, or too many', async () => {
+      await analyse().expect(400);
+
+      const unreadable = await analyse().attach('frames', Buffer.alloc(0), 'empty.jpg').expect(400);
+      expect(unreadable.body).toMatchObject({ error: 'unreadable_frame', frame: 0 });
+
+      let crowded = analyse();
+      for (let i = 0; i < 7; i++) crowded = crowded.attach('frames', fakeFrame({}), `${i}.jpg`);
+      await crowded.expect(400);
+    });
+
+    it('refuses a frame over the size limit', async () => {
+      await analyse()
+        .attach('frames', Buffer.alloc(32 * 1024, 1), 'big.jpg')
+        .expect(413);
     });
   });
 });

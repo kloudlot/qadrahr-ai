@@ -6,6 +6,8 @@ import { randomUUID } from 'crypto';
 import configuration from './config/configuration';
 import { validationSchema } from './config/validation.schema';
 import { ServiceTokenGuard } from './auth/service-token.guard';
+import { FaceBusyFilter } from './face/face-busy.filter';
+import { FaceModule } from './face/face.module';
 import { HealthController } from './health/health.controller';
 import { LlmBusyFilter } from './llm/busy.filter';
 import { LlmModule } from './llm/llm.module';
@@ -21,7 +23,7 @@ import { RecruitmentModule } from './recruitment/recruitment.module';
         // The backend's request id, so one screening can be followed across both services.
         genReqId: (req) => (req.headers['x-request-id'] as string) || randomUUID(),
         customProps: (req) => ({ tenantId: req.headers['x-tenant-id'] }),
-        // Headers carry the service token; bodies carry CVs. Neither is logged.
+        // Headers carry the service token; bodies carry CVs and faces. Neither is logged.
         serializers: {
           req: (req: { id: string; method: string; url: string }) => ({
             id: req.id,
@@ -34,11 +36,13 @@ import { RecruitmentModule } from './recruitment/recruitment.module';
     }),
     LlmModule,
     RecruitmentModule,
+    FaceModule,
   ],
   controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: ServiceTokenGuard },
     { provide: APP_FILTER, useClass: LlmBusyFilter },
+    { provide: APP_FILTER, useClass: FaceBusyFilter },
   ],
 })
 export class AppModule {}

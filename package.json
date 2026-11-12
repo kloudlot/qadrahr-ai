@@ -1,7 +1,7 @@
 {
   "name": "qadrahr-ai",
   "version": "0.1.0",
-  "description": "QadraHR AI service \u2014 LLM work, isolated from the API",
+  "description": "QadraHR AI service — model work (LLM and face), isolated from the API",
   "license": "UNLICENSED",
   "private": true,
   "engines": {
@@ -15,7 +15,8 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
-    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json"
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
+    "face:models": "node scripts/fetch-face-models.mjs"
   },
   "jest": {
     "moduleFileExtensions": [
@@ -45,10 +46,12 @@
     "joi": "^17.13.8",
     "mammoth": "^1.12.3",
     "nestjs-pino": "^4.6.1",
+    "onnxruntime-node": "^1.31.1",
     "pdf-parse": "^2.4.5",
     "pino-http": "^11.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "^0.34.5",
     "zod": "^3.25.76"
   },
   "devDependencies": {

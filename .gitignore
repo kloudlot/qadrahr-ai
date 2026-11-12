@@ -3,3 +3,6 @@ dist
 coverage
 .env
 *.log
+
+# Face models: fetched by `npm run face:models`, never committed.
+models
