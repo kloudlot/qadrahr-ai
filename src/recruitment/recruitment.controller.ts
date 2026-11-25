@@ -12,7 +12,13 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Caller, CallerContext } from '../auth/caller.decorator';
 import { parseOr400 } from '../common/zod';
-import { MatchRequestSchema, ScreenRequestSchema } from './recruitment.schemas';
+import {
+  CandidateProbesRequestSchema,
+  InterviewKitRequestSchema,
+  JobDescriptionRequestSchema,
+  MatchRequestSchema,
+  ScreenRequestSchema,
+} from './recruitment.schemas';
 import { RecruitmentService } from './recruitment.service';
 
 /** Multer's own ceiling. The configured CV limit is checked again, with a clearer message, by extraction. */
@@ -65,6 +71,27 @@ export class RecruitmentController {
   @HttpCode(HttpStatus.OK)
   async match(@Body() body: unknown, @CallerContext() _caller: Caller) {
     return this.recruitment.match(parseOr400(MatchRequestSchema, body));
+  }
+
+  /** A job advert drafted from what HR knows about the role. JSON: { role, notes? }. */
+  @Post('job-description')
+  @HttpCode(HttpStatus.OK)
+  async jobDescription(@Body() body: unknown, @CallerContext() _caller: Caller) {
+    return this.recruitment.jobDescription(parseOr400(JobDescriptionRequestSchema, body));
+  }
+
+  /** A posting's structured interview: the same questions for everyone. JSON: { posting, stage? }. */
+  @Post('interview-kit')
+  @HttpCode(HttpStatus.OK)
+  async interviewKit(@Body() body: unknown, @CallerContext() _caller: Caller) {
+    return this.recruitment.interviewKit(parseOr400(InterviewKitRequestSchema, body));
+  }
+
+  /** Follow-ups for one candidate from their screening. JSON: { posting, screening }. */
+  @Post('probes')
+  @HttpCode(HttpStatus.OK)
+  async probes(@Body() body: unknown, @CallerContext() _caller: Caller) {
+    return this.recruitment.candidateProbes(parseOr400(CandidateProbesRequestSchema, body));
   }
 }
 

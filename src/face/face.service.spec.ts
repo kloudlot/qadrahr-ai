@@ -11,6 +11,7 @@ const serviceWith = async (face: Partial<AppConfig['face']>) => {
     modelDir: '',
     threads: 1,
     maxConcurrency: 2,
+    liveness: 'minifasnet',
     ...face,
   };
   const config = { get: () => settings } as unknown as ConfigService<AppConfig, true>;

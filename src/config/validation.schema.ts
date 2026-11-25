@@ -27,6 +27,7 @@ export const validationSchema = Joi.object({
   FACE_MODEL_DIR: Joi.string().allow(''),
   FACE_THREADS: Joi.number().integer().min(1).default(2),
   FACE_MAX_CONCURRENCY: Joi.number().integer().min(1).default(2),
+  FACE_LIVENESS: Joi.string().valid('minifasnet', 'off').default('minifasnet'),
   FACE_MAX_FRAMES: Joi.number().integer().min(1).max(12).default(6),
   FACE_MAX_FRAME_BYTES: Joi.number()
     .integer()
@@ -38,4 +39,10 @@ export const validationSchema = Joi.object({
     .min(1024)
     .default(10 * 1024 * 1024),
   MAX_CV_CHARS: Joi.number().integer().min(1000).default(30000),
+  MAX_DOCUMENT_BYTES: Joi.number()
+    .integer()
+    .min(1024)
+    .default(25 * 1024 * 1024),
+  MAX_DOCUMENT_CHARS: Joi.number().integer().min(1000).default(400000),
+  MAX_POLICY_CONTEXT_CHARS: Joi.number().integer().min(4000).default(60000),
 });

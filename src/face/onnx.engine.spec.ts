@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { cosine } from './geometry';
-import { DETECTOR_FILE, OnnxFaceEngine, RECOGNISER_FILE } from './onnx.engine';
+import { DETECTOR_FILE, OnnxFaceEngine, RECOGNISER_FILE, SPOOF_MODELS } from './onnx.engine';
 
 /**
  * The real models, on real photographs.
@@ -26,13 +26,14 @@ const ready =
   existsSync(fixtures) &&
   existsSync(join(modelDir, DETECTOR_FILE)) &&
   existsSync(join(modelDir, RECOGNISER_FILE));
+const withLiveness = SPOOF_MODELS.every((m) => existsSync(join(modelDir, m.file)));
 
 (ready ? describe : describe.skip)('OnnxFaceEngine (real models)', () => {
   let engine: OnnxFaceEngine;
   let people: { name: string; photos: Buffer[] }[];
 
   beforeAll(async () => {
-    engine = await OnnxFaceEngine.load(modelDir, 2);
+    engine = await OnnxFaceEngine.load(modelDir, 2, withLiveness ? 'minifasnet' : 'off');
     people = readdirSync(fixtures as string, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => ({
@@ -62,6 +63,25 @@ const ready =
       }
     }
   }, 120_000);
+
+  (withLiveness ? it : it.skip)(
+    'scores liveness as a probability, and photographs of real faces mostly as live',
+    async () => {
+      const scores: number[] = [];
+      for (const person of people) {
+        for (const [index, photo] of person.photos.entries()) {
+          const liveness = (await engine.analyse(photo, index)).face!.liveness as number;
+          expect(liveness).toBeGreaterThanOrEqual(0);
+          expect(liveness).toBeLessThanOrEqual(1);
+          scores.push(liveness);
+        }
+      }
+      // Fixture photographs are digital originals, not attacks: on average
+      // they should read as live. Attack samples need their own set.
+      expect(scores.reduce((a, b) => a + b, 0) / scores.length).toBeGreaterThan(0.5);
+    },
+    120_000,
+  );
 
   it('scores the same person above strangers', async () => {
     const embedded = await Promise.all(

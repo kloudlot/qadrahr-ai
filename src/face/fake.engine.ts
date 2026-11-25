@@ -17,6 +17,8 @@ export interface FakeFrame {
   brightness?: number;
   /** 0–1: how far this capture strays from the person's usual embedding. */
   drift?: number;
+  /** The liveness score to report: 0.97 (live) unless set, e.g. 0.05 for a photo held up. */
+  liveness?: number;
 }
 
 /** Builds a frame the fake engine understands. For tests, here and in the backend. */
@@ -46,6 +48,7 @@ function vectorFor(seed: string): number[] {
  */
 export class FakeFaceEngine implements FaceEngine {
   readonly model = 'fake';
+  readonly livenessModel = 'fake';
 
   async analyse(frame: Buffer, index: number): Promise<FrameAnalysis> {
     if (frame.length === 0) throw new FaceUnreadableFrameException(index);
@@ -85,6 +88,7 @@ export class FakeFaceEngine implements FaceEngine {
         sharpness: spec.sharpness ?? 400,
         brightness: spec.brightness ?? 130,
         embedding: unitVector(usual.map((value, i) => (1 - drift) * value + drift * stray[i])),
+        liveness: spec.liveness ?? 0.97,
       },
     };
   }
