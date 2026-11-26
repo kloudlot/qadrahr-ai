@@ -240,3 +240,92 @@ export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
   for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
   return dot;
 }
+
+/* ── Presentation-attack detection (MiniFASNet) ─────────────────────────── */
+
+/** MiniFASNet's input: an 80×80 BGR crop, values 0–255, no normalisation. */
+export const SPOOF_INPUT = 80;
+
+/**
+ * The region MiniFASNet looks at: the face box scaled about its centre and
+ * clipped to the image, as Minivision's (and uniface's) crop does it. The
+ * scale is part of each model's training — 2.7 for V2, 4.0 for V1SE — so
+ * it takes in background, and the edges of a phone or a printout with it.
+ */
+export function spoofCropBox(
+  box: { x: number; y: number; width: number; height: number },
+  imageWidth: number,
+  imageHeight: number,
+  scale: number,
+): { x1: number; y1: number; x2: number; y2: number } {
+  // Integer box first, as the reference takes it.
+  const x = Math.trunc(box.x);
+  const y = Math.trunc(box.y);
+  const w = Math.max(1, Math.trunc(box.width));
+  const h = Math.max(1, Math.trunc(box.height));
+  const s = Math.min((imageHeight - 1) / h, (imageWidth - 1) / w, scale);
+  const newW = w * s;
+  const newH = h * s;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  return {
+    x1: Math.max(0, Math.trunc(cx - newW / 2)),
+    y1: Math.max(0, Math.trunc(cy - newH / 2)),
+    x2: Math.min(imageWidth - 1, Math.trunc(cx + newW / 2)),
+    y2: Math.min(imageHeight - 1, Math.trunc(cy + newH / 2)),
+  };
+}
+
+/**
+ * The crop, resized to `size`×`size` with bilinear sampling as OpenCV's
+ * INTER_LINEAR does it (pixel centres at +0.5), as BGR planes of raw 0–255
+ * values — the layout and range MiniFASNet was trained on.
+ */
+export function spoofCrop(
+  image: RawImage,
+  region: { x1: number; y1: number; x2: number; y2: number },
+  size = SPOOF_INPUT,
+): Float32Array {
+  const srcW = region.x2 - region.x1 + 1;
+  const srcH = region.y2 - region.y1 + 1;
+  const plane = size * size;
+  const out = new Float32Array(3 * plane);
+  const sx = srcW / size;
+  const sy = srcH / size;
+
+  for (let dy = 0; dy < size; dy++) {
+    let fy = (dy + 0.5) * sy - 0.5;
+    if (fy < 0) fy = 0;
+    const y0 = Math.min(Math.floor(fy), srcH - 1);
+    const y1 = Math.min(y0 + 1, srcH - 1);
+    const wy = fy - y0;
+    for (let dx = 0; dx < size; dx++) {
+      let fx = (dx + 0.5) * sx - 0.5;
+      if (fx < 0) fx = 0;
+      const x0 = Math.min(Math.floor(fx), srcW - 1);
+      const x1 = Math.min(x0 + 1, srcW - 1);
+      const wx = fx - x0;
+      const at = (px: number, py: number) =>
+        ((region.y1 + py) * image.width + (region.x1 + px)) * 3;
+      const a = at(x0, y0);
+      const b = at(x1, y0);
+      const c = at(x0, y1);
+      const d = at(x1, y1);
+      const to = dy * size + dx;
+      // Source is RGB; the planes go out B, G, R.
+      for (let channel = 0; channel < 3; channel++) {
+        const top = image.data[a + channel] * (1 - wx) + image.data[b + channel] * wx;
+        const bottom = image.data[c + channel] * (1 - wx) + image.data[d + channel] * wx;
+        out[(2 - channel) * plane + to] = top * (1 - wy) + bottom * wy;
+      }
+    }
+  }
+  return out;
+}
+
+export function softmax(values: ArrayLike<number>): number[] {
+  const max = Math.max(...Array.from(values));
+  const exps = Array.from(values, (v) => Math.exp(v - max));
+  const sum = exps.reduce((total, v) => total + v, 0);
+  return exps.map((v) => v / sum);
+}

@@ -18,16 +18,26 @@ browser ──► qadrahr-backend ──(service token)──► qadrahr-ai ─�
              results, usage                      nothing stored
 ```
 
-## What it does (v1: recruitment)
+## What it does
 
 | Endpoint | In | Out |
 | --- | --- | --- |
 | `POST /v1/recruitment/screen` | multipart: `posting` (JSON) plus a `cv` file (PDF, DOCX, text) **or** `cvText` | `result` (facts extracted from the CV; a 0–100 score; interview/review/reject; summary; strengths, gaps and risk flags), `document` (format, length, whether it was truncated), `usage` |
 | `POST /v1/recruitment/match` | JSON `role` + `candidate` profile | `result` (match score, fit, hire decision, reasoning), `usage` |
+| `POST /v1/recruitment/job-description` | JSON `role` (title, department, designation and its job description, grade, employment type, location, justification) + `notes` | `result` (`title`, `summary`, `responsibilities`, `requirements`, `niceToHave`), `usage`. Never invents salary, benefits or perks. |
+| `POST /v1/recruitment/interview-kit` | JSON `posting` + `stage` | `result` (`questions` each with category, what it tests and what to look for; scoring `criteria`), `removed`, `usage` |
+| `POST /v1/recruitment/probes` | JSON `posting` + `screening` (strengths, gaps, risk flags; no CV text, no name) | `result.probes` (question, the gap it explores, what to look for), `removed`, `usage` |
+| `POST /v1/performance/review-draft` | JSON `perspective` (manager or self), `scale`, `goals` (with progress and the form's ratings), `competencies`, `selfReview` and anonymous `feedback` (manager only), `notes` | `result` (`strengths`, `developmentAreas`, `overallComment`, up to three `checks`), `usage`. Never sets a rating; feedback is used by theme, never quoted. |
+| `POST /v1/assistant/policy` | JSON `question` + `policies` (`ref`, `title`, `version`, `summary`, `text`) the backend chose for this employee | `result` (`answered`, `answer`, `confidence`, `citations` of passages with our own excerpt), `context` (passages shown, whether all were), `usage` |
+| `POST /v1/payroll/review-brief` | JSON `run` (period, headcount, formatted totals now and last time) + `findings` (id, code, severity, employee number, message, formatted amounts) from the backend's checks | `result` (`summary`, `priorities` each citing finding ids), `usage`. No high or medium findings: a fixed "routine" brief, no model call. |
+| `POST /v1/documents/extract` | multipart: a `file` (PDF, DOCX, text) | `text`, `format`, `characters`, `truncated`. No model call: the backend keeps the text. |
 | `POST /v1/face/analyse` | multipart: one or more image files named `frames` | `model`, and per frame: `faceCount` and, for the largest face, `box`, `landmarks`, `yaw`, `eyeSpan`, `sharpness`, `brightness`, `embedding` |
 | `GET /health` | — | `{ status, model, inFlight, capacity, face }`. No token needed. |
 
 - **`usage` on every answer:** `{ model, promptTokens, completionTokens, totalTokens }`. The backend logs it per tenant and feature.
+- **Policy answers are grounded or withheld.** Policies that fit `MAX_POLICY_CONTEXT_CHARS` go to the model whole; past it, the passages most like the question (BM25 with HR synonyms, no vector store). An answer stands only if it cites a passage the model was shown; otherwise the employee is told the policies don't cover it. Excerpts are cut from our copy of the passage, so a citation can't misquote. No shared terms at all means no model call.
+- **Interview questions are filtered for fairness.** Any question touching age, marital status, family, pregnancy, religion, ethnicity or tribe, state of origin, nationality, disability or health, sexuality, gender or politics is dropped after the model answers, whatever it was told; `removed` says how many.
+- **The payroll brief only reads findings.** The backend does every check; the model writes a summary and the order to check things in. Priorities citing an id that wasn't sent are dropped. It is sent employee numbers and formatted amounts, never names or account numbers.
 - **`posting` fields:** `title` (required), `description`, `requirements`, `location`, `workMode`, `department`, `designation`.
 
 ### Status codes (the backend's retry policy reads these)
@@ -54,8 +64,9 @@ browser ──► qadrahr-backend ──(service token)──► qadrahr-ai ─�
 | --- | --- | --- | --- |
 | Find the face and five landmarks | YuNet | `face_detection_yunet_2023mar.onnx` (0.2 MB) | MIT |
 | Turn the aligned face into a 128-number embedding | SFace | `face_recognition_sface_2021dec.onnx` (37 MB) | Apache-2.0 |
+| Tell a live face from a photo, a screen or a mask | MiniFASNet V2 and V1SE | `MiniFASNetV2.onnx`, `MiniFASNetV1SE.onnx` (1.7 MB each) | Apache-2.0 |
 
-Both are from the [OpenCV Model Zoo](https://github.com/opencv/opencv_zoo) and run on [ONNX Runtime](https://onnxruntime.ai) (`onnxruntime-node`), with [sharp](https://sharp.pixelplumbing.com) decoding the images. The pre- and post-processing in `src/face/geometry.ts` follows OpenCV's `FaceDetectorYN` and `FaceRecognizerSF`.
+YuNet and SFace are from the [OpenCV Model Zoo](https://github.com/opencv/opencv_zoo) and run on [ONNX Runtime](https://onnxruntime.ai) (`onnxruntime-node`), with [sharp](https://sharp.pixelplumbing.com) decoding the images. The pre- and post-processing in `src/face/geometry.ts` follows OpenCV's `FaceDetectorYN` and `FaceRecognizerSF`.
 
 What comes back for the largest face in a frame:
 
@@ -66,11 +77,17 @@ What comes back for the largest face in a frame:
 | `eyeSpan` | Distance between the eyes as a fraction of the image width. A size check that barely moves as the head turns. |
 | `sharpness`, `brightness` | Laplacian variance and mean luma (0–255) of the aligned 112×112 crop, so they compare across photo sizes. |
 | `faceCount` | Every face found, so a caller can refuse a frame with a second person in it. |
+| `liveness` | 0–1: how likely the face is live in front of the camera rather than a print, a screen or a mask. The average of the two MiniFASNet models' "live" probability. Null when `FACE_LIVENESS=off`. A measurement: the backend decides what score fails. |
+
+**Liveness (presentation-attack detection).** MiniFASNet was trained by Minivision ([Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing), Apache-2.0); the ONNX files are yakhyo's exports, pinned to the SHA-256 the uniface library uses. Each model sees the face box scaled about its centre (V2 at 2.7×, V1SE at 4.0×, clipped to the image), resized bilinearly to 80×80, as BGR values 0–255 with no normalisation; class 1 of its softmax is "live". It looks at texture: the moiré, glare and flatness of a screen or a print. It complements the backend's head-turn check, which a replayed video can pass half the time.
+
+- `livenessModel` in the response names the models. It is separate from `model` on purpose: switching liveness on or off doesn't make enrolled templates stale.
+- The detector here is YuNet, not the one Minivision trained with, so its boxes (and so the crops) differ a little. **Calibrate the backend's `FACE_SPOOF_REJECT` / `FACE_SPOOF_REVIEW` on real captures** — live faces and attacks (a phone replay, a print) on the devices employees use — before relying on the defaults. The step-by-step procedure (a shadow pilot, the attacks to collect, how to read the scores and choose the lines) is in qadrahr-backend's `docs/FACE_LIVENESS_GO_LIVE.md`.
 
 **Set up**
 
 ```bash
-npm run face:models     # fetches both files into ./models, checked against pinned SHA-256
+npm run face:models     # fetches the four files into ./models, checked against pinned SHA-256
 FACE_PROVIDER=onnx npm run start:dev
 ```
 
@@ -150,8 +167,11 @@ Docker: `docker build -t qadrahr-ai . && docker run --env-file .env -p 4100:4100
 | `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES` | `60000`, `2` | Per model call. |
 | `AI_MAX_CONCURRENCY` | `8` | Model calls in flight. Size it to your OpenAI rate limit. |
 | `MAX_CV_BYTES`, `MAX_CV_CHARS` | 10 MB, 30,000 | |
+| `MAX_DOCUMENT_BYTES`, `MAX_DOCUMENT_CHARS` | 25 MB, 400,000 | For `/v1/documents/extract`. |
+| `MAX_POLICY_CONTEXT_CHARS` | 60,000 | Policy text one answer may show the model (about 15k tokens). |
 | `FACE_PROVIDER` | `off` | `onnx` for the real models, `fake` for tests and local wiring. |
 | `FACE_MODEL_DIR` | `./models` | Where the two `.onnx` files are. |
+| `FACE_LIVENESS` | `minifasnet` | `off` skips presentation-attack detection (and its two model files). |
 | `FACE_THREADS`, `FACE_MAX_CONCURRENCY` | `2`, `2` | CPU threads per inference, and requests at once. Their product is the cores spent on faces. |
 | `FACE_MAX_FRAMES`, `FACE_MAX_FRAME_BYTES` | `6`, 3 MB | Per request. |
 
@@ -174,7 +194,7 @@ The test scripts set `NODE_OPTIONS=--experimental-vm-modules`, because pdf.js lo
 
 ## Where it came from
 
-The recruitment features and prompts are adapted from ploy-api's `langchains` module (`AiMatchService`, `FileExtractionService`). Its other AI features — policy Q&A, payroll audit and forecast, reporting, exit themes — are candidates for later versions, and follow the same pattern.
+The recruitment features and prompts are adapted from ploy-api's `langchains` module (`AiMatchService`, `FileExtractionService`). Policy Q&A follows ploy's policy assistant, rebuilt: ploy pasted every document into every prompt and trusted the model's citations. The payroll brief replaces ploy's payroll AI audit, whose anomaly detection was the model's; here the checks are the backend's and the model only summarises them. Its other AI features — payroll forecast, reporting, exit themes — are candidates for later versions, and follow the same pattern.
 
 Deliberately not carried over from ploy-api:
 - models built ad hoc on the environment key;

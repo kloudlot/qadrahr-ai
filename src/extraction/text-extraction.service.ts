@@ -17,6 +17,9 @@ export interface ExtractedText {
   format: 'pdf' | 'docx' | 'text';
 }
 
+/** What is being read: a candidate's CV, or an organisation's document. */
+export type ExtractionKind = 'cv' | 'document';
+
 const PDF = /^%PDF-/;
 /** DOCX is a zip; the first bytes are the zip signature. */
 const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -36,11 +39,21 @@ export class TextExtractionService {
     this.limits = config.get('limits', { infer: true });
   }
 
-  async extract(buffer: Buffer, filename = ''): Promise<ExtractedText> {
-    if (buffer.length === 0) throw new UnprocessableEntityException('The CV file is empty');
-    if (buffer.length > this.limits.maxCvBytes) {
+  /**
+   * `kind` sets the limits and the words in errors: a CV is short and cut
+   * at the CV limit; a document (a policy, a handbook) may run to hundreds
+   * of pages and has its own.
+   */
+  async extract(
+    buffer: Buffer,
+    filename = '',
+    kind: ExtractionKind = 'cv',
+  ): Promise<ExtractedText> {
+    const { noun, maxBytes } = this.rules(kind);
+    if (buffer.length === 0) throw new UnprocessableEntityException(`The ${noun} file is empty`);
+    if (buffer.length > maxBytes) {
       throw new PayloadTooLargeException(
-        `The CV is larger than ${Math.round(this.limits.maxCvBytes / 1024 / 1024)} MB`,
+        `The ${noun} is larger than ${Math.round(maxBytes / 1024 / 1024)} MB`,
       );
     }
 
@@ -69,14 +82,21 @@ export class TextExtractionService {
       format = 'text';
       text = buffer.toString('utf8');
     } else {
-      throw new UnsupportedMediaTypeException('CVs must be PDF, Word (.docx) or plain text');
+      throw new UnsupportedMediaTypeException(
+        `${noun === 'CV' ? 'CVs' : 'Documents'} must be PDF, Word (.docx) or plain text`,
+      );
     }
 
-    return this.fromText(text, format);
+    return this.fromText(text, format, kind);
   }
 
   /** Text the backend already has — a cover letter — held to the same rules. */
-  fromText(raw: string, format: ExtractedText['format'] = 'text'): ExtractedText {
+  fromText(
+    raw: string,
+    format: ExtractedText['format'] = 'text',
+    kind: ExtractionKind = 'cv',
+  ): ExtractedText {
+    const { noun, maxChars } = this.rules(kind);
     const text = raw
       .replace(/\u0000/g, '')
       .replace(/[ \t]+/g, ' ')
@@ -89,12 +109,22 @@ export class TextExtractionService {
       throw new UnprocessableEntityException({
         statusCode: 422,
         error: 'no_readable_text',
-        message: 'No readable text was found — the CV may be a scanned image',
+        message: `No readable text was found — the ${noun} may be a scanned image`,
       });
     }
 
-    const truncated = text.length > this.limits.maxCvChars;
-    return { text: truncated ? text.slice(0, this.limits.maxCvChars) : text, truncated, format };
+    const truncated = text.length > maxChars;
+    return { text: truncated ? text.slice(0, maxChars) : text, truncated, format };
+  }
+
+  private rules(kind: ExtractionKind) {
+    return kind === 'cv'
+      ? { noun: 'CV', maxBytes: this.limits.maxCvBytes, maxChars: this.limits.maxCvChars }
+      : {
+          noun: 'document',
+          maxBytes: this.limits.maxDocumentBytes,
+          maxChars: this.limits.maxDocumentChars,
+        };
   }
 }
 

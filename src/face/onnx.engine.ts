@@ -1,7 +1,7 @@
 import { join } from 'path';
 import type * as Ort from 'onnxruntime-node';
 import type Sharp from 'sharp';
-import type { FaceEngine, FrameAnalysis } from './face.types';
+import type { DetectedFace, FaceEngine, FrameAnalysis } from './face.types';
 import { FaceUnreadableFrameException } from './face.errors';
 import {
   alignedCrop,
@@ -14,6 +14,10 @@ import {
   eyeSpanOf,
   largest,
   RawImage,
+  softmax,
+  SPOOF_INPUT,
+  spoofCrop,
+  spoofCropBox,
   suppressOverlaps,
   unitVector,
   yawOf,
@@ -21,6 +25,19 @@ import {
 
 export const DETECTOR_FILE = 'face_detection_yunet_2023mar.onnx';
 export const RECOGNISER_FILE = 'face_recognition_sface_2021dec.onnx';
+
+/**
+ * Minivision's two presentation-attack models and the crop scale each was
+ * trained at. Averaged, as Minivision's own test does: the wider V1SE crop
+ * sees more of the edges of a phone or printout, V2 more of the face.
+ */
+export const SPOOF_MODELS = [
+  { file: 'MiniFASNetV2.onnx', scale: 2.7 },
+  { file: 'MiniFASNetV1SE.onnx', scale: 4.0 },
+] as const;
+
+/** In MiniFASNet's output (after softmax), the class that means a live face. */
+const LIVE_CLASS = 1;
 
 /** A detection below this is not a face worth measuring. */
 const MIN_FACE_SCORE = 0.7;
@@ -38,15 +55,23 @@ const MAX_FACE_OVERLAP = 0.3;
  */
 export class OnnxFaceEngine implements FaceEngine {
   readonly model = 'yunet-2023mar+sface-2021dec';
+  readonly livenessModel: string | null;
 
   private constructor(
     private readonly ort: typeof Ort,
     private readonly sharp: typeof Sharp,
     private readonly detector: Ort.InferenceSession,
     private readonly recogniser: Ort.InferenceSession,
-  ) {}
+    private readonly spoof: { session: Ort.InferenceSession; scale: number }[],
+  ) {
+    this.livenessModel = spoof.length ? 'minifasnet-v2+v1se' : null;
+  }
 
-  static async load(modelDir: string, threads: number): Promise<OnnxFaceEngine> {
+  static async load(
+    modelDir: string,
+    threads: number,
+    liveness: 'minifasnet' | 'off' = 'minifasnet',
+  ): Promise<OnnxFaceEngine> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ort = require('onnxruntime-node') as typeof Ort;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -56,11 +81,20 @@ export class OnnxFaceEngine implements FaceEngine {
       // Errors only: SFace's export trips a page of harmless graph warnings on every load.
       logSeverityLevel: 3,
     };
-    const [detector, recogniser] = await Promise.all([
+    const [detector, recogniser, ...spoof] = await Promise.all([
       ort.InferenceSession.create(join(modelDir, DETECTOR_FILE), options),
       ort.InferenceSession.create(join(modelDir, RECOGNISER_FILE), options),
+      ...(liveness === 'minifasnet'
+        ? SPOOF_MODELS.map((m) => ort.InferenceSession.create(join(modelDir, m.file), options))
+        : []),
     ]);
-    return new OnnxFaceEngine(ort, sharp, detector, recogniser);
+    return new OnnxFaceEngine(
+      ort,
+      sharp,
+      detector,
+      recogniser,
+      spoof.map((session, i) => ({ session, scale: SPOOF_MODELS[i].scale })),
+    );
   }
 
   async analyse(frame: Buffer, index: number): Promise<FrameAnalysis> {
@@ -91,8 +125,28 @@ export class OnnxFaceEngine implements FaceEngine {
         eyeSpan: eyeSpanOf(face.landmarks, image.width),
         ...cropQuality(crop),
         embedding,
+        liveness: await this.liveness(image, face.box),
       },
     };
+  }
+
+  /** The averaged chance, over both models, that the face is live. Null when liveness is off. */
+  private async liveness(image: RawImage, box: DetectedFace['box']): Promise<number | null> {
+    if (!this.spoof.length) return null;
+    let total = 0;
+    for (const { session, scale } of this.spoof) {
+      const input = spoofCrop(image, spoofCropBox(box, image.width, image.height, scale));
+      const output = await session.run({
+        [session.inputNames[0]]: new this.ort.Tensor('float32', input, [
+          1,
+          3,
+          SPOOF_INPUT,
+          SPOOF_INPUT,
+        ]),
+      });
+      total += softmax(output[session.outputNames[0]].data as Float32Array)[LIVE_CLASS];
+    }
+    return total / this.spoof.length;
   }
 
   /** Raw RGB, turned the way the camera's EXIF tag says it was held. */

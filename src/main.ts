@@ -12,7 +12,8 @@ async function bootstrap() {
 
   app.use(helmet());
   // No CORS: browsers never call this service. Only qadrahr-backend does.
-  app.useBodyParser('json', { limit: '1mb' });
+  // Policy questions carry the policies' text: a handbook can run to megabytes.
+  app.useBodyParser('json', { limit: '8mb' });
   app.enableShutdownHooks();
 
   const port = app.get(ConfigService<AppConfig, true>).get('port', { infer: true });

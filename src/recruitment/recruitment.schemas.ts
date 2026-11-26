@@ -102,3 +102,95 @@ export const MatchRequestSchema = z.object({
     location: z.string().max(200).nullish(),
   }),
 });
+
+/* ── Job descriptions and interview kits ────────────────────────────────── */
+
+export const JobDescriptionDraftSchema = z.object({
+  title: z.string().describe('The job title as it should be advertised'),
+  summary: z
+    .string()
+    .describe(
+      'Two or three sentences introducing the role and why it matters. No company claims not given',
+    ),
+  responsibilities: z
+    .array(z.string())
+    .describe('Five to eight things the person will do, each one line'),
+  requirements: z
+    .array(z.string())
+    .describe('Four to eight must-haves. Only what the role truly needs'),
+  niceToHave: z.array(z.string()).describe('Up to four extras that help but are not required'),
+});
+
+export type JobDescriptionDraft = z.infer<typeof JobDescriptionDraftSchema>;
+
+export const JobDescriptionRequestSchema = z.object({
+  role: z.object({
+    title: z.string().min(1).max(200),
+    department: z.string().max(200).nullish(),
+    designation: z.string().max(200).nullish(),
+    grade: z.string().max(200).nullish(),
+    employmentType: z.string().max(50).nullish(),
+    location: z.string().max(200).nullish(),
+    workMode: z.string().max(50).nullish(),
+    /** The designation's own job description, if HR wrote one. */
+    designationDescription: z.string().max(20000).nullish(),
+    /** Why the role is being hired, from the requisition. */
+    justification: z.string().max(5000).nullish(),
+  }),
+  /** What the recruiter wants said or stressed. */
+  notes: z.string().max(3000).nullish(),
+});
+
+export const InterviewQuestionCategory = z.enum([
+  'technical',
+  'behavioural',
+  'situational',
+  'motivation',
+]);
+
+export const InterviewKitSchema = z.object({
+  questions: z
+    .array(
+      z.object({
+        question: z.string(),
+        category: InterviewQuestionCategory,
+        assesses: z.string().describe('Which requirement of the posting this tests'),
+        lookFor: z.array(z.string()).describe('Two or three signs of a strong answer'),
+      }),
+    )
+    .describe('Eight questions every candidate for this posting is asked, in a sensible order'),
+  criteria: z
+    .array(z.object({ name: z.string(), description: z.string() }))
+    .describe('Four to six things interviewers score, each tied to the requirements'),
+});
+
+export type InterviewKit = z.infer<typeof InterviewKitSchema>;
+
+export const InterviewKitRequestSchema = z.object({
+  posting: PostingSchema,
+  stage: z.string().max(100).nullish(),
+});
+
+export const CandidateProbesSchema = z.object({
+  probes: z
+    .array(
+      z.object({
+        question: z.string(),
+        explores: z.string().describe('The gap or flag from the screening it explores'),
+        lookFor: z.array(z.string()).describe('Two or three signs the gap is not real or is small'),
+      }),
+    )
+    .describe('Three to five follow-up questions for this candidate, from their screening'),
+});
+
+export type CandidateProbes = z.infer<typeof CandidateProbesSchema>;
+
+export const CandidateProbesRequestSchema = z.object({
+  posting: PostingSchema,
+  /** From the candidate's screening. No CV text and no name: the gaps are enough. */
+  screening: z.object({
+    strengths: z.array(z.string().max(500)).max(30).default([]),
+    gaps: z.array(z.string().max(500)).max(30).default([]),
+    riskFlags: z.array(z.string().max(500)).max(30).default([]),
+  }),
+});

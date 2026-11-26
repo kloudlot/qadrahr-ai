@@ -8,6 +8,8 @@ import { OnnxFaceEngine } from './onnx.engine';
 
 export interface FaceAnalysis {
   model: string;
+  /** The presentation-attack models, or null when liveness is off. */
+  livenessModel: string | null;
   frames: FrameAnalysis[];
 }
 
@@ -37,17 +39,29 @@ export class FaceService implements OnModuleInit {
 
   /** Loaded at start, so a missing model file stops the deploy instead of the first clock-in. */
   async onModuleInit(): Promise<void> {
-    const { provider, modelDir, threads, maxConcurrency } = this.settings;
+    const { provider, modelDir, threads, maxConcurrency, liveness } = this.settings;
     if (provider === 'off') return;
     this.engine =
-      provider === 'fake' ? new FakeFaceEngine() : await OnnxFaceEngine.load(modelDir, threads);
-    this.logger.log(`Face engine: ${this.engine.model}, up to ${maxConcurrency} requests at once`);
+      provider === 'fake'
+        ? new FakeFaceEngine()
+        : await OnnxFaceEngine.load(modelDir, threads, liveness);
+    this.logger.log(
+      `Face engine: ${this.engine.model}, liveness ${this.engine.livenessModel ?? 'off'}, ` +
+        `up to ${maxConcurrency} requests at once`,
+    );
   }
 
-  get status(): { provider: string; model: string | null; inFlight: number; capacity: number } {
+  get status(): {
+    provider: string;
+    model: string | null;
+    livenessModel: string | null;
+    inFlight: number;
+    capacity: number;
+  } {
     return {
       provider: this.settings.provider,
       model: this.engine?.model ?? null,
+      livenessModel: this.engine?.livenessModel ?? null,
       inFlight: this.inFlight,
       capacity: this.settings.maxConcurrency,
     };
@@ -68,7 +82,11 @@ export class FaceService implements OnModuleInit {
       }
       // Counts and timings only. Never a frame, a landmark or an embedding.
       this.logger.log(`analyse: ${frames.length} frames in ${Date.now() - started} ms`);
-      return { model: this.engine.model, frames: analysed };
+      return {
+        model: this.engine.model,
+        livenessModel: this.engine.livenessModel,
+        frames: analysed,
+      };
     } finally {
       this.inFlight -= 1;
     }

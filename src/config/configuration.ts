@@ -31,12 +31,26 @@ export interface AppConfig {
     threads: number;
     /** Requests analysed at once. Beyond it, callers get 503 and retry. */
     maxConcurrency: number;
+    /**
+     * Presentation-attack detection on every frame with a face: `minifasnet`
+     * (two MiniFASNet models, averaged) or `off`. Only used by the `onnx` provider.
+     */
+    liveness: 'minifasnet' | 'off';
   };
   limits: {
     /** Largest CV accepted, in bytes. */
     maxCvBytes: number;
     /** CV text beyond this is cut before it reaches the model — bounds the tokens. */
     maxCvChars: number;
+    /** Largest document (a policy, a handbook) accepted for text extraction. */
+    maxDocumentBytes: number;
+    /** Document text kept, at most. A long handbook is cut here. */
+    maxDocumentChars: number;
+    /**
+     * Policy text one assistant answer may show the model. Under it, every
+     * policy goes in whole; over it, the passages most like the question.
+     */
+    maxPolicyContextChars: number;
   };
 }
 
@@ -57,9 +71,13 @@ export default (): AppConfig => ({
     modelDir: process.env.FACE_MODEL_DIR || join(process.cwd(), 'models'),
     threads: parseInt(process.env.FACE_THREADS || '2', 10),
     maxConcurrency: parseInt(process.env.FACE_MAX_CONCURRENCY || '2', 10),
+    liveness: (process.env.FACE_LIVENESS || 'minifasnet') as 'minifasnet' | 'off',
   },
   limits: {
     maxCvBytes: parseInt(process.env.MAX_CV_BYTES || String(10 * 1024 * 1024), 10),
     maxCvChars: parseInt(process.env.MAX_CV_CHARS || '30000', 10),
+    maxDocumentBytes: parseInt(process.env.MAX_DOCUMENT_BYTES || String(25 * 1024 * 1024), 10),
+    maxDocumentChars: parseInt(process.env.MAX_DOCUMENT_CHARS || '400000', 10),
+    maxPolicyContextChars: parseInt(process.env.MAX_POLICY_CONTEXT_CHARS || '60000', 10),
   },
 });

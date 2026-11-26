@@ -29,6 +29,12 @@ export interface AnalysedFace extends DetectedFace {
   brightness: number;
   /** Unit-length identity vector. Compare two with a dot product. */
   embedding: number[];
+  /**
+   * How likely the face is a live one in front of the camera rather than a
+   * photo, a screen or a mask: 0–1, from the presentation-attack models.
+   * Null when they are switched off. A measurement, not a verdict.
+   */
+  liveness: number | null;
 }
 
 export interface FrameAnalysis {
@@ -48,5 +54,7 @@ export interface FrameAnalysis {
 export interface FaceEngine {
   /** Names the models, so a stored template can be tied to what produced it. */
   readonly model: string;
+  /** Names the presentation-attack models, or null when liveness is off. Separate from `model`, so templates stay valid. */
+  readonly livenessModel: string | null;
   analyse(frame: Buffer, index: number): Promise<FrameAnalysis>;
 }

@@ -12,6 +12,9 @@ import { HealthController } from './health/health.controller';
 import { LlmBusyFilter } from './llm/busy.filter';
 import { LlmModule } from './llm/llm.module';
 import { RecruitmentModule } from './recruitment/recruitment.module';
+import { AssistantModule } from './assistant/assistant.module';
+import { PayrollModule } from './payroll/payroll.module';
+import { PerformanceModule } from './performance/performance.module';
 
 @Module({
   imports: [
@@ -36,6 +39,9 @@ import { RecruitmentModule } from './recruitment/recruitment.module';
     }),
     LlmModule,
     RecruitmentModule,
+    AssistantModule,
+    PayrollModule,
+    PerformanceModule,
     FaceModule,
   ],
   controllers: [HealthController],
